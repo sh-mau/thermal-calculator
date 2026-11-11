@@ -7,6 +7,7 @@ st.set_page_config(page_title="Thermal Calculator", layout="wide")
 st.title("Thermal Calculator")
 
 
+# ---------- Yordamchi funksiyalar ----------
 def calculate_enthalpy(p_bar, t_C):
     return CP.PropsSI("H", "P", p_bar * 1e5, "T", t_C + 273.15, "Water") / 1000
 
@@ -67,7 +68,72 @@ def hs_diagram(pressure_bar, temperature_K, fluid="Water"):
     return fig, h_pt, s_pt
 
 
-tab1, tab2, tab3 = st.tabs(["Heating/Cooling", "H-S diagram", "HRSG boiler"])
+def steam_water_inputs(prefix):
+    """HP va LP suv/bug' kiritish maydonlarini chizadi. prefix - har yorliq uchun alohida."""
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("High pressure")
+        m_hp = st.number_input("HP water mass flow (kg/s)", min_value=0.0, value=10.0, key=f"{prefix}_m_hp")
+        p_hw = st.number_input("HP water pressure (bar)", value=100.0, key=f"{prefix}_p_hw")
+        t_hw = st.number_input("HP water temp (°C)", value=100.0, key=f"{prefix}_t_hw")
+        p_hs = st.number_input("HP steam pressure (bar)", value=100.0, key=f"{prefix}_p_hs")
+        t_hs = st.number_input("HP steam temp (°C)", value=500.0, key=f"{prefix}_t_hs")
+    with col2:
+        st.subheader("Low pressure")
+        m_lp = st.number_input("LP water mass flow (kg/s)", min_value=0.0, value=5.0, key=f"{prefix}_m_lp")
+        p_lw = st.number_input("LP water pressure (bar)", value=10.0, key=f"{prefix}_p_lw")
+        t_lw = st.number_input("LP water temp (°C)", value=100.0, key=f"{prefix}_t_lw")
+        p_ls = st.number_input("LP steam pressure (bar)", value=10.0, key=f"{prefix}_p_ls")
+        t_ls = st.number_input("LP steam temp (°C)", value=250.0, key=f"{prefix}_t_ls")
+    return m_hp, p_hw, t_hw, p_hs, t_hs, m_lp, p_lw, t_lw, p_ls, t_ls
+
+
+def steam_water_power(m_hp, p_hw, t_hw, p_hs, t_hs, m_lp, p_lw, t_lw, p_ls, t_ls):
+    """HP va LP bo'yicha issiqlik quvvatini (kW) qaytaradi."""
+    if m_hp <= 0 or m_lp <= 0:
+        raise ValueError("Mass flow rate must be positive!")
+
+    h_hw = calculate_enthalpy(p_hw, t_hw)
+    h_hs = calculate_enthalpy(p_hs, t_hs)
+    h_lw = calculate_enthalpy(p_lw, t_lw)
+    h_ls = calculate_enthalpy(p_ls, t_ls)
+
+    if h_hs <= h_hw:
+        raise ValueError("HP steam enthalpy must exceed water enthalpy.")
+    if h_ls <= h_lw:
+        raise ValueError("LP steam enthalpy must exceed water enthalpy.")
+
+    q_hp = m_hp * (h_hs - h_hw)
+    q_lp = m_lp * (h_ls - h_lw)
+    return q_hp, q_lp
+
+
+def gas_inputs(prefix):
+    """Chiqindi gaz kiritish maydonlari."""
+    m_gas = st.number_input("Exhaust gas mass flow rate (kg/s)", min_value=0.0, value=100.0, key=f"{prefix}_m_gas")
+    cp_gas = st.number_input("Specific heat capacity of gas (kJ/(kg·K))", min_value=0.0, value=1.1, key=f"{prefix}_cp_gas")
+    t_in_gas = st.number_input("Gas inlet temperature (°C)", value=600.0, key=f"{prefix}_t_in_gas")
+    t_out_gas = st.number_input("Gas outlet temperature (°C)", value=150.0, key=f"{prefix}_t_out_gas")
+    return m_gas, cp_gas, t_in_gas, t_out_gas
+
+
+def gas_power(m_gas, cp_gas, t_in_gas, t_out_gas):
+    """Gazdan berilgan issiqlik quvvati (kW)."""
+    if m_gas <= 0 or cp_gas <= 0:
+        raise ValueError("Mass flow and Cp must be positive!")
+    if t_out_gas > t_in_gas:
+        raise ValueError("Gas outlet temperature cannot exceed inlet temperature!")
+    return cp_gas * m_gas * (t_in_gas - t_out_gas)
+
+
+# ---------- Yorliqlar ----------
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Heating/Cooling",
+    "H-S diagram",
+    "HRSG steam/water",
+    "HRSG gas",
+    "HRSG efficiency",
+])
 
 # ---------- 1. Heating / cooling ----------
 with tab1:
@@ -106,47 +172,74 @@ with tab2:
         except ValueError as e:
             st.error(f"Error: {e}")
 
-# ---------- 3. HRSG ----------
+# ---------- 3. HRSG steam/water ----------
 with tab3:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("High pressure")
-        m_hp = st.number_input("HP mass flow (kg/s)", min_value=0.0, value=10.0)
-        p_hw = st.number_input("HP water pressure (bar)", value=100.0)
-        t_hw = st.number_input("HP water temp (°C)", value=100.0)
-        p_hs = st.number_input("HP steam pressure (bar)", value=100.0)
-        t_hs = st.number_input("HP steam temp (°C)", value=500.0)
-    with col2:
-        st.subheader("Low pressure")
-        m_lp = st.number_input("LP mass flow (kg/s)", min_value=0.0, value=5.0)
-        p_lw = st.number_input("LP water pressure (bar)", value=10.0)
-        t_lw = st.number_input("LP water temp (°C)", value=100.0)
-        p_ls = st.number_input("LP steam pressure (bar)", value=10.0)
-        t_ls = st.number_input("LP steam temp (°C)", value=250.0)
+    vals3 = steam_water_inputs("t3")
 
     if st.button("Calculate", key="calc3"):
         try:
-            if m_hp <= 0 or m_lp <= 0:
-                raise ValueError("Mass flow rate must be positive!")
-
-            h_hw = calculate_enthalpy(p_hw, t_hw)
-            h_hs = calculate_enthalpy(p_hs, t_hs)
-            h_lw = calculate_enthalpy(p_lw, t_lw)
-            h_ls = calculate_enthalpy(p_ls, t_ls)
-
-            if h_hs <= h_hw:
-                raise ValueError("HP steam enthalpy must exceed water enthalpy.")
-            if h_ls <= h_lw:
-                raise ValueError("LP steam enthalpy must exceed water enthalpy.")
-
-            q_hp = m_hp * (h_hs - h_hw)
-            q_lp = m_lp * (h_ls - h_lw)
+            q_hp, q_lp = steam_water_power(*vals3)
             q_tot = q_hp + q_lp
 
             c1, c2, c3 = st.columns(3)
             c1.metric("LP heat power", f"{q_lp / 1000:.2f} MW")
             c2.metric("HP heat power", f"{q_hp / 1000:.2f} MW")
             c3.metric("Total", f"{q_tot / 1000:.2f} MW")
+        except ValueError as e:
+            st.error(f"Input error: {e}")
+        except Exception as e:
+            st.error(f"Calculation error: {e}")
+
+# ---------- 4. HRSG gas ----------
+with tab4:
+    st.subheader("Exhaust gas side")
+    vals4 = gas_inputs("t4")
+
+    if st.button("Calculate", key="calc4"):
+        try:
+            q_gas = gas_power(*vals4)
+            st.caption("Q = Cp · m · ΔT")
+            if q_gas == 0:
+                st.info("No heat exchange happened.")
+            c1, c2 = st.columns(2)
+            c1.metric("Gas heat power", f"{q_gas:.2f} kW")
+            c2.metric("Gas heat power", f"{q_gas / 1000:.2f} MW")
+        except ValueError as e:
+            st.error(f"Input error: {e}")
+
+# ---------- 5. HRSG efficiency ----------
+with tab5:
+    st.subheader("Exhaust gas side")
+    gas_vals5 = gas_inputs("t5")
+    st.divider()
+    st.subheader("Steam/water side")
+    sw_vals5 = steam_water_inputs("t5")
+
+    if st.button("Calculate", key="calc5"):
+        try:
+            q_gas = gas_power(*gas_vals5)
+            if q_gas <= 0:
+                raise ValueError("Gas heat power must be greater than zero to calculate efficiency.")
+
+            q_hp, q_lp = steam_water_power(*sw_vals5)
+            q_tot = q_hp + q_lp
+
+            eta = q_tot / q_gas * 100
+            loss = q_gas - q_tot
+
+            if eta > 100:
+                st.warning("Efficiency is above 100%. Steam/water side absorbs more heat "
+                           "than the gas gives. Please check your inputs.")
+
+            r1, r2, r3 = st.columns(3)
+            r1.metric("Gas heat power", f"{q_gas / 1000:.2f} MW")
+            r2.metric("HP heat power", f"{q_hp / 1000:.2f} MW")
+            r3.metric("LP heat power", f"{q_lp / 1000:.2f} MW")
+
+            r4, r5, r6 = st.columns(3)
+            r4.metric("Total steam/water power", f"{q_tot / 1000:.2f} MW")
+            r5.metric("Efficiency (direct method)", f"{eta:.2f} %")
+            r6.metric("Total heat loss", f"{loss / 1000:.2f} MW")
         except ValueError as e:
             st.error(f"Input error: {e}")
         except Exception as e:

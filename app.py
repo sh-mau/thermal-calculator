@@ -69,18 +69,17 @@ def hs_diagram(pressure_bar, temperature_K, fluid="Water"):
 
 
 def steam_water_inputs(prefix):
-    """HP va LP suv/bug' kiritish maydonlarini chizadi. prefix - har yorliq uchun alohida."""
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("High pressure")
-        m_hp = st.number_input("HP water mass flow (kg/s)", min_value=0.0, value=10.0, key=f"{prefix}_m_hp")
+        m_hp = st.number_input("HP mass flow (kg/s)", min_value=0.0, value=10.0, key=f"{prefix}_m_hp")
         p_hw = st.number_input("HP water pressure (bar)", value=100.0, key=f"{prefix}_p_hw")
         t_hw = st.number_input("HP water temp (°C)", value=100.0, key=f"{prefix}_t_hw")
         p_hs = st.number_input("HP steam pressure (bar)", value=100.0, key=f"{prefix}_p_hs")
         t_hs = st.number_input("HP steam temp (°C)", value=500.0, key=f"{prefix}_t_hs")
     with col2:
         st.subheader("Low pressure")
-        m_lp = st.number_input("LP water mass flow (kg/s)", min_value=0.0, value=5.0, key=f"{prefix}_m_lp")
+        m_lp = st.number_input("LP mass flow (kg/s)", min_value=0.0, value=5.0, key=f"{prefix}_m_lp")
         p_lw = st.number_input("LP water pressure (bar)", value=10.0, key=f"{prefix}_p_lw")
         t_lw = st.number_input("LP water temp (°C)", value=100.0, key=f"{prefix}_t_lw")
         p_ls = st.number_input("LP steam pressure (bar)", value=10.0, key=f"{prefix}_p_ls")
@@ -89,7 +88,6 @@ def steam_water_inputs(prefix):
 
 
 def steam_water_power(m_hp, p_hw, t_hw, p_hs, t_hs, m_lp, p_lw, t_lw, p_ls, t_ls):
-    """HP va LP bo'yicha issiqlik quvvatini (kW) qaytaradi."""
     if m_hp <= 0 or m_lp <= 0:
         raise ValueError("Mass flow rate must be positive!")
 
@@ -109,7 +107,6 @@ def steam_water_power(m_hp, p_hw, t_hw, p_hs, t_hs, m_lp, p_lw, t_lw, p_ls, t_ls
 
 
 def gas_inputs(prefix):
-    """Chiqindi gaz kiritish maydonlari."""
     m_gas = st.number_input("Exhaust gas mass flow rate (kg/s)", min_value=0.0, value=100.0, key=f"{prefix}_m_gas")
     cp_gas = st.number_input("Specific heat capacity of gas (kJ/(kg·K))", min_value=0.0, value=1.1, key=f"{prefix}_cp_gas")
     t_in_gas = st.number_input("Gas inlet temperature (°C)", value=600.0, key=f"{prefix}_t_in_gas")
@@ -118,7 +115,6 @@ def gas_inputs(prefix):
 
 
 def gas_power(m_gas, cp_gas, t_in_gas, t_out_gas):
-    """Gazdan berilgan issiqlik quvvati (kW)."""
     if m_gas <= 0 or cp_gas <= 0:
         raise ValueError("Mass flow and Cp must be positive!")
     if t_out_gas > t_in_gas:
@@ -126,23 +122,22 @@ def gas_power(m_gas, cp_gas, t_in_gas, t_out_gas):
     return cp_gas * m_gas * (t_in_gas - t_out_gas)
 
 
-# ---------- Yorliqlar ----------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Heating/Cooling",
+# ---------- Asosiy yorliqlar ----------
+tab_heat, tab_hs, tab_hrsg, tab_gt = st.tabs([
+    "Heat power",
     "H-S diagram",
-    "HRSG steam/water",
-    "HRSG gas",
-    "HRSG efficiency",
+    "HRSG",
+    "Gas Turbine",
 ])
 
-# ---------- 1. Heating / cooling ----------
-with tab1:
-    m = st.number_input("Mass flow rate (kg/s)", min_value=0.0, value=1.0)
-    cp = st.number_input("Specific heat capacity (kJ/(kg·K))", min_value=0.0, value=4.18)
-    t_in = st.number_input("Inlet temperature (°C)", value=20.0)
-    t_out = st.number_input("Outlet temperature (°C)", value=80.0)
+# ---------- 1. Heat power ----------
+with tab_heat:
+    m = st.number_input("Mass flow rate (kg/s)", min_value=0.0, value=1.0, key="h_m")
+    cp = st.number_input("Specific heat capacity (kJ/(kg·K))", min_value=0.0, value=4.18, key="h_cp")
+    t_in = st.number_input("Inlet temperature (°C)", value=20.0, key="h_tin")
+    t_out = st.number_input("Outlet temperature (°C)", value=80.0, key="h_tout")
 
-    if st.button("Calculate", key="calc1"):
+    if st.button("Calculate", key="calc_heat"):
         if m <= 0 or cp <= 0:
             st.error("Mass flow and Cp must be positive!")
         else:
@@ -159,11 +154,11 @@ with tab1:
             st.metric("Heat power", f"{q_kW / 1000:.2f} MW")
 
 # ---------- 2. H-S diagram ----------
-with tab2:
-    p = st.number_input("Pressure (bar)", min_value=0.01, value=10.0)
-    t = st.number_input("Temperature (°C)", value=300.0)
+with tab_hs:
+    p = st.number_input("Pressure (bar)", min_value=0.01, value=10.0, key="hs_p")
+    t = st.number_input("Temperature (°C)", value=300.0, key="hs_t")
 
-    if st.button("Plot", key="calc2"):
+    if st.button("Plot", key="calc_hs"):
         try:
             fig, h, s = hs_diagram(p, t + 273.15)
             st.pyplot(fig)
@@ -172,75 +167,124 @@ with tab2:
         except ValueError as e:
             st.error(f"Error: {e}")
 
-# ---------- 3. HRSG steam/water ----------
-with tab3:
-    vals3 = steam_water_inputs("t3")
+# ---------- 3. HRSG ----------
+with tab_hrsg:
+    sub_a, sub_b, sub_c = st.tabs([
+        "A. Steam/Water",
+        "B. Gas",
+        "C. Efficiency",
+    ])
 
-    if st.button("Calculate", key="calc3"):
-        try:
-            q_hp, q_lp = steam_water_power(*vals3)
-            q_tot = q_hp + q_lp
+    # A. Steam/water
+    with sub_a:
+        vals_a = steam_water_inputs("ha")
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("LP heat power", f"{q_lp / 1000:.2f} MW")
-            c2.metric("HP heat power", f"{q_hp / 1000:.2f} MW")
-            c3.metric("Total", f"{q_tot / 1000:.2f} MW")
-        except ValueError as e:
-            st.error(f"Input error: {e}")
-        except Exception as e:
-            st.error(f"Calculation error: {e}")
+        if st.button("Calculate", key="calc_ha"):
+            try:
+                q_hp, q_lp = steam_water_power(*vals_a)
+                q_tot = q_hp + q_lp
 
-# ---------- 4. HRSG gas ----------
-with tab4:
-    st.subheader("Exhaust gas side")
-    vals4 = gas_inputs("t4")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("LP heat power", f"{q_lp / 1000:.2f} MW")
+                c2.metric("HP heat power", f"{q_hp / 1000:.2f} MW")
+                c3.metric("Total", f"{q_tot / 1000:.2f} MW")
+            except ValueError as e:
+                st.error(f"Input error: {e}")
+            except Exception as e:
+                st.error(f"Calculation error: {e}")
 
-    if st.button("Calculate", key="calc4"):
-        try:
-            q_gas = gas_power(*vals4)
-            st.caption("Q = Cp · m · ΔT")
-            if q_gas == 0:
-                st.info("No heat exchange happened.")
-            c1, c2 = st.columns(2)
-            c1.metric("Gas heat power", f"{q_gas:.2f} kW")
-            c2.metric("Gas heat power", f"{q_gas / 1000:.2f} MW")
-        except ValueError as e:
-            st.error(f"Input error: {e}")
+    # B. Gas
+    with sub_b:
+        st.subheader("Exhaust gas side")
+        vals_b = gas_inputs("hb")
 
-# ---------- 5. HRSG efficiency ----------
-with tab5:
-    st.subheader("Exhaust gas side")
-    gas_vals5 = gas_inputs("t5")
-    st.divider()
-    st.subheader("Steam/water side")
-    sw_vals5 = steam_water_inputs("t5")
+        if st.button("Calculate", key="calc_hb"):
+            try:
+                q_gas = gas_power(*vals_b)
+                st.caption("Q = Cp · m · ΔT")
+                if q_gas == 0:
+                    st.info("No heat exchange happened.")
+                c1, c2 = st.columns(2)
+                c1.metric("Gas heat power", f"{q_gas:.2f} kW")
+                c2.metric("Gas heat power", f"{q_gas / 1000:.2f} MW")
+            except ValueError as e:
+                st.error(f"Input error: {e}")
 
-    if st.button("Calculate", key="calc5"):
-        try:
-            q_gas = gas_power(*gas_vals5)
-            if q_gas <= 0:
-                raise ValueError("Gas heat power must be greater than zero to calculate efficiency.")
+    # C. Efficiency
+    with sub_c:
+        st.subheader("Exhaust gas side")
+        gas_vals_c = gas_inputs("hc")
+        st.divider()
+        st.subheader("Steam/water side")
+        sw_vals_c = steam_water_inputs("hc")
 
-            q_hp, q_lp = steam_water_power(*sw_vals5)
-            q_tot = q_hp + q_lp
+        if st.button("Calculate", key="calc_hc"):
+            try:
+                q_gas = gas_power(*gas_vals_c)
+                if q_gas <= 0:
+                    raise ValueError("Gas heat power must be greater than zero to calculate efficiency.")
 
-            eta = q_tot / q_gas * 100
-            loss = q_gas - q_tot
+                q_hp, q_lp = steam_water_power(*sw_vals_c)
+                q_tot = q_hp + q_lp
 
-            if eta > 100:
-                st.warning("Efficiency is above 100%. Steam/water side absorbs more heat "
-                           "than the gas gives. Please check your inputs.")
+                eta = q_tot / q_gas * 100
+                loss = q_gas - q_tot
 
-            r1, r2, r3 = st.columns(3)
-            r1.metric("Gas heat power", f"{q_gas / 1000:.2f} MW")
-            r2.metric("HP heat power", f"{q_hp / 1000:.2f} MW")
-            r3.metric("LP heat power", f"{q_lp / 1000:.2f} MW")
+                if eta > 100:
+                    st.warning("Efficiency is above 100%. Steam/water side absorbs more heat "
+                               "than the gas gives. Please check your inputs.")
 
-            r4, r5, r6 = st.columns(3)
-            r4.metric("Total steam/water power", f"{q_tot / 1000:.2f} MW")
-            r5.metric("Efficiency (direct method)", f"{eta:.2f} %")
-            r6.metric("Total heat loss", f"{loss / 1000:.2f} MW")
-        except ValueError as e:
-            st.error(f"Input error: {e}")
-        except Exception as e:
-            st.error(f"Calculation error: {e}")
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Gas heat power", f"{q_gas / 1000:.2f} MW")
+                r2.metric("HP heat power", f"{q_hp / 1000:.2f} MW")
+                r3.metric("LP heat power", f"{q_lp / 1000:.2f} MW")
+
+                r4, r5, r6 = st.columns(3)
+                r4.metric("Total steam/water power", f"{q_tot / 1000:.2f} MW")
+                r5.metric("Efficiency (direct method)", f"{eta:.2f} %")
+                r6.metric("Total heat loss", f"{loss / 1000:.2f} MW")
+            except ValueError as e:
+                st.error(f"Input error: {e}")
+            except Exception as e:
+                st.error(f"Calculation error: {e}")
+
+# ---------- 4. Gas Turbine ----------
+with tab_gt:
+    gt_a, gt_b = st.tabs([
+        "A. Electrical efficiency (Real)",
+        "B. Idealized thermal efficiency",
+    ])
+
+    with gt_a:
+        gas_flow = st.number_input("Fuel gas flow (Sm³/h)", min_value=0.0, value=20000.0, key="gt_flow")
+        gas_density = st.number_input("Fuel gas density (kg/Sm³)", min_value=0.0, value=0.75, format="%.3f", key="gt_dens")
+        LHV = st.number_input("Lower heating value (MJ/kg)", min_value=0.0, value=47.0, key="gt_lhv")
+        GT = st.number_input("GT electrical output (MW)", min_value=0.0, value=80.0, key="gt_out")
+
+        if st.button("Calculate", key="calc_gt"):
+            try:
+                if gas_flow <= 0 or gas_density <= 0 or LHV <= 0 or GT <= 0:
+                    raise ValueError("All values must be positive!")
+
+                m_f = (gas_flow * gas_density) / 3600      # kg/s
+                Q_in = m_f * LHV                           # MW
+                eta_e = (GT / Q_in) * 100                  # %
+
+                if eta_e > 100:
+                    st.warning("Efficiency is above 100%. Please check your inputs.")
+
+                heat_rate = 3600 / (eta_e / 100)           # kJ/kWh
+
+                c1, c2 = st.columns(2)
+                c1.metric("Fuel mass flow", f"{m_f:.2f} kg/s")
+                c2.metric("Fuel heat power", f"{Q_in:.2f} MW")
+                c3, c4 = st.columns(2)
+                c3.metric("Electrical efficiency", f"{eta_e:.2f} %")
+                c4.metric("Heat rate", f"{heat_rate:.2f} kJ/kWh")
+            except ValueError as e:
+                st.error(f"Input error: {e}")
+            except Exception as e:
+                st.error(f"Calculation error: {e}")
+
+    with gt_b:
+        st.info("Gas Turbine idealized thermal efficiency calculator coming soon.")
